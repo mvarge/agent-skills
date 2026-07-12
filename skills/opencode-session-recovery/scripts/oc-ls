@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+# oc-ls — list recent OpenCode sessions
+# Usage: oc-ls               sessions from current directory (recursive)
+#        oc-ls -a            all sessions across all directories
+#        oc-ls -p <path>     sessions for a specific directory prefix
+#        oc-ls -n <count>    limit (default 30)
+set -euo pipefail
+
+DB="$HOME/.local/share/opencode/opencode.db"
+LIMIT=30
+MODE="cwd"   # cwd | all | path
+DIR_PREFIX=""
+
+usage() {
+  cat <<EOF
+oc-ls — list recent OpenCode sessions
+
+Usage:
+  oc-ls [flags]
+
+Flags:
+  (default)              sessions whose directory starts with the current cwd
+  -a, --all              all sessions across every directory
+  -p, --path <prefix>    sessions where directory LIKE prefix%
+  -n, --limit <count>    max rows (default: 30)
+  -h, --help             show this help
+
+Output columns: title | updated | dir | session_id
+EOF
+  exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help)   usage ;;
+    -a|--all)    MODE="all"; shift ;;
+    -p|--path)   MODE="path"; DIR_PREFIX="$2"; shift 2 ;;
+    -n|--limit)  LIMIT="$2"; shift 2 ;;
+    *)           echo "unknown arg: $1" >&2; exit 2 ;;
+  esac
+done
+
+case "$MODE" in
+  cwd)
+    PREFIX="$(pwd)"
+    ;;
+  path)
+    PREFIX="$DIR_PREFIX"
+    ;;
+  all)
+    PREFIX=""
+    ;;
+esac
+
+PREFIX_ESC=${PREFIX//\'/\'\'}
+WHERE="s.time_archived IS NULL"
+if [[ -n "$PREFIX" ]]; then
+  WHERE="${WHERE} AND s.directory LIKE '${PREFIX_ESC}%'"
+fi
+
+sqlite3 -header -column "$DB" "
+  SELECT
+    substr(s.title, 1, 55) AS title,
+    datetime(s.time_updated/1000, 'unixepoch', 'localtime') AS updated,
+    substr(replace(s.directory, '$HOME', '~'), 1, 40) AS dir,
+    s.id AS session_id
+  FROM session s
+  WHERE ${WHERE}
+  ORDER BY s.time_updated DESC
+  LIMIT ${LIMIT};
+"

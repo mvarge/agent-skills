@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# oc-grep — search OpenCode sessions by message content
+# Usage: oc-grep <query>            search all sessions
+#        oc-grep -h                 help
+#        oc-grep -p <path> <query>  filter by directory prefix
+#        oc-grep -n <count> <query> limit results (default 20)
+set -euo pipefail
+
+DB="$HOME/.local/share/opencode/opencode.db"
+LIMIT=20
+DIR_FILTER=""
+
+usage() {
+  cat <<EOF
+oc-grep — search OpenCode sessions by message content
+
+Usage:
+  oc-grep [flags] <query>
+
+Flags:
+  -p, --path <prefix>   only match sessions where directory LIKE prefix%
+  -n, --limit <count>   max rows to return (default: 20)
+  -h, --help            show this help
+
+Output columns: title | updated | dir | session_id
+
+The session_id can be passed to oc-resume or:
+  opencode run --session <id> "your continuation prompt"
+EOF
+  exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    -h|--help)   usage ;;
+    -p|--path)   DIR_FILTER="$2"; shift 2 ;;
+    -n|--limit)  LIMIT="$2"; shift 2 ;;
+    --)          shift; break ;;
+    -*)          echo "unknown flag: $1" >&2; exit 2 ;;
+    *)           break ;;
+  esac
+done
+
+if [[ $# -lt 1 ]]; then usage; fi
+QUERY="$*"
+# escape single quotes for SQL literal
+Q_ESC=${QUERY//\'/\'\'}
+
+DIR_CLAUSE=""
+if [[ -n "$DIR_FILTER" ]]; then
+  DIR_ESC=${DIR_FILTER//\'/\'\'}
+  DIR_CLAUSE="AND s.directory LIKE '${DIR_ESC}%'"
+fi
+
+sqlite3 -header -column "$DB" "
+  SELECT DISTINCT
+    substr(s.title, 1, 55) AS title,
+    datetime(s.time_updated/1000, 'unixepoch', 'localtime') AS updated,
+    substr(replace(s.directory, '$HOME', '~'), 1, 40) AS dir,
+    s.id AS session_id
+  FROM session s
+  JOIN part p ON p.session_id = s.id
+  WHERE p.data LIKE '%${Q_ESC}%'
+    AND s.time_archived IS NULL
+    ${DIR_CLAUSE}
+  ORDER BY s.time_updated DESC
+  LIMIT ${LIMIT};
+"
