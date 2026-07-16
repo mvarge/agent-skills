@@ -9,12 +9,15 @@ LIST_ONLY=0
 
 usage() {
   cat <<EOF
-oc-resume — resume an OpenCode session by title match or ID
+oc-resume — resume an OpenCode session by slug, title match, or ID
 
 Usage:
-  oc-resume <query>              resume the most recent session whose title
-                                 contains <query> (case-insensitive). Errors
-                                 if the match is ambiguous.
+  oc-resume <slug>               resume the most recent session whose slug
+                                 matches exactly (e.g. 'neon-moon'). Errors if
+                                 the slug is ambiguous (slugs are not unique).
+  oc-resume <query>              resume the most recent session whose slug or
+                                 title contains <query> (case-insensitive).
+                                 Errors if the match is ambiguous.
   oc-resume <session_id>         resume a specific session by its ID (starts
                                  with 'ses_'), no message required.
   oc-resume -l <query>           list matches instead of resuming
@@ -43,14 +46,29 @@ if [[ "$INPUT" == ses_* ]]; then
   SESSION_ID="$INPUT"
 else
   Q_ESC=${INPUT//\'/\'\'}
+
+  # First try an exact slug match (e.g. 'neon-moon'). Slugs are not guaranteed
+  # unique, so this can still return several rows — handled by the count logic.
   matches=$(sqlite3 "$DB" "
-    SELECT s.id || '|' || substr(s.title, 1, 55) || '|' || datetime(s.time_updated/1000, 'unixepoch', 'localtime')
+    SELECT s.id || '|' || s.slug || '|' || substr(s.title, 1, 55) || '|' || datetime(s.time_updated/1000, 'unixepoch', 'localtime')
     FROM session s
-    WHERE s.title LIKE '%${Q_ESC}%' COLLATE NOCASE
+    WHERE s.slug = '${Q_ESC}' COLLATE NOCASE
       AND s.time_archived IS NULL
     ORDER BY s.time_updated DESC
     LIMIT 10;
   ")
+
+  # Fall back to a substring search over slug OR title.
+  if [[ -z "$matches" ]]; then
+    matches=$(sqlite3 "$DB" "
+      SELECT s.id || '|' || s.slug || '|' || substr(s.title, 1, 55) || '|' || datetime(s.time_updated/1000, 'unixepoch', 'localtime')
+      FROM session s
+      WHERE (s.title LIKE '%${Q_ESC}%' OR s.slug LIKE '%${Q_ESC}%') COLLATE NOCASE
+        AND s.time_archived IS NULL
+      ORDER BY s.time_updated DESC
+      LIMIT 10;
+    ")
+  fi
 
   if [[ -z "$matches" ]]; then
     echo "no session matched: $INPUT" >&2
@@ -58,21 +76,22 @@ else
   fi
 
   if [[ $LIST_ONLY -eq 1 ]]; then
-    printf '%-24s  %-55s  %s\n' "session_id" "title" "updated"
-    printf '%s\n' "$matches" | awk -F'|' '{ printf "%-24s  %-55s  %s\n", $1, $2, $3 }'
+    printf '%-24s  %-16s  %-55s  %s\n' "session_id" "slug" "title" "updated"
+    printf '%s\n' "$matches" | awk -F'|' '{ printf "%-24s  %-16s  %-55s  %s\n", $1, $2, $3, $4 }'
     exit 0
   fi
 
   count=$(printf '%s\n' "$matches" | wc -l | tr -d ' ')
   if [[ "$count" -gt 1 ]]; then
     echo "ambiguous query: $count matches. Re-run with -l to list, then use the ID:" >&2
-    printf '%s\n' "$matches" | awk -F'|' '{ printf "  %-24s  %-55s  %s\n", $1, $2, $3 }' >&2
+    printf '%s\n' "$matches" | awk -F'|' '{ printf "  %-24s  %-16s  %-55s  %s\n", $1, $2, $3, $4 }' >&2
     exit 2
   fi
 
   SESSION_ID=$(printf '%s' "$matches" | head -1 | cut -d'|' -f1)
-  TITLE=$(printf '%s' "$matches" | head -1 | cut -d'|' -f2)
-  echo "resuming: $SESSION_ID  ($TITLE)" >&2
+  SLUG=$(printf '%s' "$matches" | head -1 | cut -d'|' -f2)
+  TITLE=$(printf '%s' "$matches" | head -1 | cut -d'|' -f3)
+  echo "resuming: $SESSION_ID  ($SLUG — $TITLE)" >&2
 fi
 
 # We resolved a session ID. Hand off to opencode. --continue with an

@@ -43,9 +43,11 @@ oc-ls                       # sessions whose directory starts with cwd
 oc-ls -a                    # all sessions everywhere
 oc-ls -p ~/Projects/foo     # sessions for a specific path prefix
 oc-ls -n 50                 # bump the row limit (default 30)
+oc-ls moon                  # keyword filter (case-insensitive, slug/title/dir)
+oc-ls -a "load balancer"    # combine with -a/-p/-n; multi-word joins as one substring
 ```
 
-Columns: `title | updated | dir | session_id`. `session_id` is what you feed to `oc-resume` or `opencode -s`.
+Columns: `slug | title | updated | dir | session_id`. `session_id` is what you feed to `oc-resume` or `opencode -s`. Slugs (like `neon-moon`) are OpenCode's short human handles for sessions and are usable directly with `oc-resume`.
 
 ### `oc-grep` — search sessions by message content
 
@@ -57,15 +59,16 @@ oc-grep -n 5 "supabase migration"
 
 Searches `part.data` for the substring across all sessions (or filtered by path prefix). Same output columns as `oc-ls`.
 
-### `oc-resume` — resume by title fragment or ID
+### `oc-resume` — resume by slug, title fragment, or ID
 
 ```bash
-oc-resume "load balancer"           # if unambiguous, drops into that session
+oc-resume neon-moon                 # exact slug match (case-insensitive)
+oc-resume "load balancer"           # substring on slug OR title; if unambiguous, drops into that session
 oc-resume ses_0b40615a5ffe...       # by explicit ID
 oc-resume -l "release"              # list matches instead of resuming
 ```
 
-If a title fragment matches more than one session, `oc-resume` refuses and prints the candidates. Under the hood it just runs `opencode -s <id>`.
+Resolution order: (1) exact slug match on `session.slug`, (2) fall back to substring on slug OR title. If either pass returns more than one row, `oc-resume` refuses and prints the candidates so you can pick by ID. Under the hood it just runs `opencode -s <id>`.
 
 ## Raw SQL when the scripts aren't enough
 
