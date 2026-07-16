@@ -4,19 +4,21 @@
 #        oc-ls -a            all sessions across all directories
 #        oc-ls -p <path>     sessions for a specific directory prefix
 #        oc-ls -n <count>    limit (default 30)
+#        oc-ls <keyword>     filter by keyword (case-insensitive, slug/title/dir)
 set -euo pipefail
 
 DB="$HOME/.local/share/opencode/opencode.db"
 LIMIT=30
 MODE="cwd"   # cwd | all | path
 DIR_PREFIX=""
+KEYWORD=""
 
 usage() {
   cat <<EOF
 oc-ls — list recent OpenCode sessions
 
 Usage:
-  oc-ls [flags]
+  oc-ls [flags] [keyword]
 
 Flags:
   (default)              sessions whose directory starts with the current cwd
@@ -25,7 +27,14 @@ Flags:
   -n, --limit <count>    max rows (default: 30)
   -h, --help             show this help
 
-Output columns: title | updated | dir | session_id
+Positional:
+  [keyword]              case-insensitive substring match against slug, title,
+                         or directory. Combines with the other filters (AND).
+                         Multiple words are joined with spaces and matched as
+                         a single substring. Passing --all with a keyword is a
+                         handy way to find sessions across the whole DB.
+
+Output columns: slug | title | updated | dir | session_id
 EOF
   exit 0
 }
@@ -36,7 +45,9 @@ while [[ $# -gt 0 ]]; do
     -a|--all)    MODE="all"; shift ;;
     -p|--path)   MODE="path"; DIR_PREFIX="$2"; shift 2 ;;
     -n|--limit)  LIMIT="$2"; shift 2 ;;
-    *)           echo "unknown arg: $1" >&2; exit 2 ;;
+    --)          shift; KEYWORD="$*"; break ;;
+    -*)          echo "unknown arg: $1" >&2; exit 2 ;;
+    *)           KEYWORD="$*"; break ;;
   esac
 done
 
@@ -57,9 +68,14 @@ WHERE="s.time_archived IS NULL"
 if [[ -n "$PREFIX" ]]; then
   WHERE="${WHERE} AND s.directory LIKE '${PREFIX_ESC}%'"
 fi
+if [[ -n "$KEYWORD" ]]; then
+  KW_ESC=${KEYWORD//\'/\'\'}
+  WHERE="${WHERE} AND (s.slug LIKE '%${KW_ESC}%' COLLATE NOCASE OR s.title LIKE '%${KW_ESC}%' COLLATE NOCASE OR s.directory LIKE '%${KW_ESC}%' COLLATE NOCASE)"
+fi
 
 sqlite3 -header -column "$DB" "
   SELECT
+    s.slug AS slug,
     substr(s.title, 1, 55) AS title,
     datetime(s.time_updated/1000, 'unixepoch', 'localtime') AS updated,
     substr(replace(s.directory, '$HOME', '~'), 1, 40) AS dir,
