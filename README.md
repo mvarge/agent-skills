@@ -14,6 +14,10 @@ Useful if you have a personal agent with tools the current coding session doesn'
 
 Find, search, and resume past [OpenCode](https://opencode.ai) sessions by querying the local SQLite session store directly instead of scrolling the TUI picker. Ships with three helper scripts (`oc-ls`, `oc-grep`, `oc-resume`) for listing sessions by cwd, full-text search across message content, and resuming by title fragment or session ID. Also includes a schema cheat sheet, useful raw-SQL recipes, and a triage playbook for when title generation silently breaks.
 
+### [`subtitle-translation`](skills/subtitle-translation/)
+
+Translate movie and TV subtitles to Brazilian Portuguese while preserving timestamps. Handles full and forced MKV subtitle tracks, chunked translation, cue validation, merging, and optional installation beside media on butterbot.
+
 ## Install
 
 Install a specific skill:
@@ -21,6 +25,7 @@ Install a specific skill:
 ```bash
 npx skills add mvarge/agent-skills --skill ntfy-agent-bridge
 npx skills add mvarge/agent-skills --skill opencode-session-recovery
+npx skills add mvarge/agent-skills --skill subtitle-translation
 ```
 
 Install all skills in this repo:
